@@ -17,6 +17,10 @@ class Config:
     dropbox_token: str | None = field(default_factory=lambda: os.getenv("DROPBOX_TOKEN"))
     youtube_api_key: str | None = field(default_factory=lambda: os.getenv("YOUTUBE_API_KEY"))
     youtube_channel: str = field(default_factory=lambda: os.getenv("TOGI_YT_CHANNEL", ""))
+    # Sub-folder of the shared Dropbox with the full YouTube uploads.
+    dropbox_youtube_folder: str = field(
+        default_factory=lambda: os.getenv("TOGI_DROPBOX_YT_FOLDER", "/YouTube Videos")
+    )
     whisper_model: str = field(default_factory=lambda: os.getenv("WHISPER_MODEL", "small"))
     claude_model: str = field(default_factory=lambda: os.getenv("CLAUDE_MODEL", "claude-opus-5-5"))
     clips_per_video: int = field(default_factory=lambda: int(os.getenv("CLIPS_PER_VIDEO", "8")))

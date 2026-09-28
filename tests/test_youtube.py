@@ -1,7 +1,14 @@
 import pytest
 
 from togi_clipper.highlights import format_moments
-from togi_clipper.youtube import hot_moments, parse_duration, timestamps_in, video_id
+from togi_clipper.youtube import (
+    best_match,
+    hot_moments,
+    normalize_title,
+    parse_duration,
+    timestamps_in,
+    video_id,
+)
 
 DURATION = 3 * 3600.0
 
@@ -50,3 +57,23 @@ def test_hot_moments_clusters_and_ranks():
 def test_format_moments_quotes_comments():
     text = format_moments([{"time": 605.5, "score": 3.2, "mentions": 2, "comments": ['he said "no"']}])
     assert text == '[10:05.5] score 3.2, 2 mentions. Comments: "he said \\"no\\""'
+
+
+def result(vid, title):
+    return {"id": {"videoId": vid}, "snippet": {"title": title}}
+
+
+def test_normalize_title():
+    assert normalize_title("YouTube Videos__TOGI Buys A LAMBO!!.mp4") == "togi buys a lambo"
+    assert normalize_title("I&#39;m done | TOGI") == "i m done togi"
+
+
+def test_best_match_picks_closest_title():
+    results = [
+        result("aaaaaaaaaaa", "TOGI reacts to Lambo prices"),
+        result("bbbbbbbbbbb", "I Bought My Dream Lambo (TOGI)"),
+        result("ccccccccccc", "Cooking stream"),
+    ]
+    m = best_match("YouTube Videos__I bought my dream lambo.mp4", results)
+    assert m["id"] == "bbbbbbbbbbb" and m["similarity"] > 0.8
+    assert best_match("Completely different video.mp4", results) is None

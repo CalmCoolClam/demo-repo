@@ -5,6 +5,8 @@ Timestamps like "12:34 LMAO" are collected, weighted by likes and grouped into
 "hot moments" that are handed to the highlight picker.
 """
 
+import difflib
+import html
 import json
 import math
 import re
@@ -43,12 +45,66 @@ def parse_duration(iso: str) -> float:
     return float(d * 86400 + h * 3600 + mi * 60 + s)
 
 
+def normalize_title(text: str) -> str:
+    text = Path(text).stem if Path(text).suffix.lower() in {".mp4", ".mov", ".mkv", ".webm", ".m4v"} else text
+    text = text.split("__")[-1]  # drop the flattened Dropbox folder prefix
+    text = html.unescape(text).lower()
+    return " ".join(re.sub(r"[^\w]+", " ", text).split())
+
+
+def title_similarity(a: str, b: str) -> float:
+    return difflib.SequenceMatcher(None, normalize_title(a), normalize_title(b)).ratio()
+
+
+def channel_id(cfg: Config) -> str | None:
+    if not cfg.youtube_channel:
+        return None
+    handle = cfg.youtube_channel.lstrip("@")
+    if handle.startswith("UC"):
+        return handle
+    items = _client(cfg).channels().list(part="id", forHandle=handle).execute().get("items", [])
+    if not items:
+        raise SystemExit(f"YouTube channel not found: {cfg.youtube_channel}")
+    return items[0]["id"]
+
+
+def best_match(file_name: str, results: list[dict], min_similarity: float = 0.6) -> dict | None:
+    """Pick the search.list result whose title is closest to the file name."""
+    scored = [(title_similarity(file_name, r["snippet"]["title"]), r) for r in results]
+    scored = [s for s in scored if s[0] >= min_similarity]
+    if not scored:
+        return None
+    score, r = max(scored, key=lambda s: s[0])
+    return {"id": r["id"]["videoId"], "title": html.unescape(r["snippet"]["title"]), "similarity": round(score, 2)}
+
+
+def match_file(cfg: Config, video: Path, channel: str | None) -> dict | None:
+    """Find the YouTube upload for a local video with search.list (cached, 100 quota units per search)."""
+    cache_file = cfg.work_dir / "youtube_matches.json"
+    cache = json.loads(cache_file.read_text()) if cache_file.exists() else {}
+    if video.name in cache:
+        return cache[video.name]
+
+    query = normalize_title(video.name)
+    params = {"part": "snippet", "q": query, "type": "video", "maxResults": 10}
+    if channel:
+        params["channelId"] = channel
+    results = _client(cfg).search().list(**params).execute().get("items", [])
+    match = best_match(video.name, results)
+    if match:
+        match.update(video_info(cfg, match["id"]))
+        print(f"  {video.name} -> {match['title']} (https://youtu.be/{match['id']})")
+    else:
+        print(f"  {video.name}: no matching YouTube video found")
+    cache[video.name] = match
+    cache_file.write_text(json.dumps(cache, ensure_ascii=False, indent=2))
+    return match
+
+
 def latest_uploads(cfg: Config, count: int, min_seconds: float = 180) -> list[dict]:
     """Newest long-form uploads of the channel (Shorts are skipped)."""
     yt = _client(cfg)
-    handle = cfg.youtube_channel.lstrip("@")
-    lookup = {"id": handle} if handle.startswith("UC") else {"forHandle": handle}
-    items = yt.channels().list(part="contentDetails", **lookup).execute().get("items", [])
+    items = yt.channels().list(part="contentDetails", id=channel_id(cfg)).execute().get("items", [])
     if not items:
         raise SystemExit(f"YouTube channel not found: {cfg.youtube_channel}")
     uploads = items[0]["contentDetails"]["relatedPlaylists"]["uploads"]

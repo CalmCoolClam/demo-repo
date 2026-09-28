@@ -41,20 +41,29 @@ python -m togi_clipper process my.mp4 --no-render   # only pick highlights, no r
 
 ### Clip YouTube videos around what viewers comment on
 
-Reads the comments on TOGI's official YouTube videos, finds the timestamps people post ("12:34 😭😭"), scores each moment by how many comments point at it and how many likes those comments have, and clips those moments first.
+Takes the full videos from the Dropbox **YouTube Videos** folder, finds each one on TOGI's YouTube channel, reads its comments, finds the timestamps people post ("12:34 😭😭") and clips those moments first.
+
+For each video in the folder, it:
+1. downloads the video from Dropbox,
+2. finds the same video on YouTube with [`search.list`](https://developers.google.com/youtube/v3/docs/search/list) by matching the file name to video titles,
+3. reads its comments, groups the timestamps into moments and scores them by number of comments and likes,
+4. has Claude build clips around the top moments, with captions and a hook title.
 
 ```bash
 export YOUTUBE_API_KEY=AIza...        # see below
-export TOGI_YT_CHANNEL=@channelhandle # the official channel's @handle (or its UC... id)
+export TOGI_YT_CHANNEL=@channelhandle # official channel's @handle: limits the search to TOGI's own uploads
 
-python -m togi_clipper youtube --latest 3 --moments-only   # just list the hot moments
-python -m togi_clipper youtube --latest 3                  # download + clip the 3 newest videos
-python -m togi_clipper youtube --video https://youtu.be/VIDEO_ID
+python -m togi_clipper youtube --moments-only   # list the hot moments per video, no clips
+python -m togi_clipper youtube --limit 2        # download up to 2 new videos and clip everything in the folder
 ```
 
-**YouTube API key (free):** in [Google Cloud Console](https://console.cloud.google.com/) create a project, enable *YouTube Data API v3*, then *Credentials -> Create credentials -> API key*. The free quota (10,000 units/day) covers roughly 100 videos' worth of comments a day.
+- **Matches are saved** in `work/youtube_matches.json`, so each video is searched only once. Check it after the first run. If a video matched the wrong upload, or none, put the right video ID in the file, or delete its entry to search again, then delete that video's `work/transcripts/<id>.moments.json`.
+- **Length check:** if the Dropbox file and the YouTube upload differ in length by more than 30 seconds (for example, a re-edit), comment timestamps won't line up. That video is then clipped from the transcript alone.
+- **Quota:** `search.list` costs 100 of the free 10,000 daily units, and reading comments costs about 1 unit per 100 comments. That's roughly 90 new videos a day.
+- **Other options:** `--latest N` (the newest uploads on the channel) and `--video URL` download from YouTube with yt-dlp instead of Dropbox. YouTube's terms don't allow downloading, so prefer the Dropbox mode.
+- **Different folder:** set `TOGI_DROPBOX_YT_FOLDER` if the folder name in Dropbox changes (default `/YouTube Videos`).
 
-Comments are read through the official API. Videos are downloaded with yt-dlp. TOGI allows clipping his content, but YouTube's terms don't allow downloading, so use the Dropbox copy of a video when it's there.
+**YouTube API key (free):** in [Google Cloud Console](https://console.cloud.google.com/) create a project, enable *YouTube Data API v3*, then *Credentials -> Create credentials -> API key*.
 
 ### Output
 

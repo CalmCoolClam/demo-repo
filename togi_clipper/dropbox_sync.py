@@ -29,21 +29,33 @@ def _walk(dbx: dropbox.Dropbox, link: dropbox.files.SharedLink, path: str = ""):
         result = dbx.files_list_folder_continue(result.cursor)
 
 
-def sync(cfg: Config, limit: int | None = None) -> list[Path]:
-    """Download videos not yet on disk. Returns the newly downloaded paths."""
+def local_name(rel_path: str) -> str:
+    """Dropbox path -> file name in work/raw (sub-folders flattened so names stay unique)."""
+    return rel_path.strip("/").replace("/", "__")
+
+
+def sync(cfg: Config, limit: int | None = None, folder: str = "") -> list[Path]:
+    """Download videos in `folder` (e.g. "/YouTube Videos") that are not yet on disk.
+
+    Returns every video of that folder that is on disk afterwards (new and old).
+    `limit` caps how many new videos are downloaded in this run.
+    """
     if not cfg.dropbox_token:
         raise SystemExit("DROPBOX_TOKEN is not set (see README).")
     cfg.ensure_dirs()
     dbx = dropbox.Dropbox(cfg.dropbox_token)
     link = dropbox.files.SharedLink(url=cfg.dropbox_url)
 
-    new: list[Path] = []
-    for rel_path, meta in _walk(dbx, link):
+    present: list[Path] = []
+    downloaded = 0
+    for rel_path, meta in _walk(dbx, link, folder.rstrip("/")):
         if Path(meta.name).suffix.lower() not in VIDEO_EXTS:
             continue
-        # Flatten sub-folders into the file name so names stay unique.
-        dest = cfg.raw_dir / rel_path.strip("/").replace("/", "__")
+        dest = cfg.raw_dir / local_name(rel_path)
         if dest.exists() and dest.stat().st_size == meta.size:
+            present.append(dest)
+            continue
+        if limit is not None and downloaded >= limit:
             continue
         print(f"Downloading {rel_path} ({meta.size / 1e6:.0f} MB)")
         tmp = dest.with_suffix(dest.suffix + ".part")
@@ -52,7 +64,7 @@ def sync(cfg: Config, limit: int | None = None) -> list[Path]:
             for chunk in resp.iter_content(chunk_size=1 << 20):
                 f.write(chunk)
         tmp.rename(dest)
-        new.append(dest)
-        if limit and len(new) >= limit:
-            break
-    return new
+        present.append(dest)
+        downloaded += 1
+    print(f"{downloaded} new video(s) downloaded, {len(present)} in {folder or 'Dropbox'}")
+    return present
