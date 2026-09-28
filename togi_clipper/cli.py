@@ -53,7 +53,7 @@ def main(argv: list[str] | None = None) -> None:
 
     p_yt = sub.add_parser("youtube", help="Clip official TOGI YouTube videos around the moments viewers comment on")
     src = p_yt.add_mutually_exclusive_group()
-    src.add_argument("--latest", type=int, metavar="N", help="The channel's N newest long videos")
+    src.add_argument("--latest", type=int, metavar="N", help="The N newest long videos across the channels")
     src.add_argument("--video", nargs="+", metavar="URL", help="Specific video links or IDs")
     p_yt.add_argument("--limit", type=int, help="Dropbox mode: download at most N new videos")
     p_yt.add_argument("--moments-only", action="store_true", help="Only print the hot moments, no download/clips")
@@ -86,8 +86,6 @@ def run_youtube(cfg: Config, args: argparse.Namespace) -> None:
     if args.latest or args.video:
         # Videos picked on YouTube, downloaded with yt-dlp.
         if args.latest:
-            if not cfg.youtube_channel:
-                raise SystemExit("TOGI_YT_CHANNEL is not set (the channel's @handle, see README).")
             infos = youtube.latest_uploads(cfg, args.latest)
         else:
             infos = [youtube.video_info(cfg, youtube.video_id(v)) for v in args.video]
@@ -101,10 +99,10 @@ def run_youtube(cfg: Config, args: argparse.Namespace) -> None:
 
     # Default: videos from the Dropbox "YouTube Videos" folder, matched to YouTube with search.list.
     videos = dropbox_sync.sync(cfg, args.limit, folder=cfg.dropbox_youtube_folder)
-    channel = youtube.channel_id(cfg)
+    channels = youtube.channel_ids(cfg)
     print("Matching Dropbox videos to YouTube uploads")
     for video in videos:
-        info = youtube.match_file(cfg, video, channel)
+        info = youtube.match_file(cfg, video, channels)
         moments = json.loads(youtube.collect(cfg, info).read_text())["moments"] if info else None
         if args.moments_only:
             if info:

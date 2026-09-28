@@ -3,6 +3,8 @@ import pytest
 from togi_clipper.highlights import format_moments
 from togi_clipper.youtube import (
     best_match,
+    channel_handle,
+    match_file,
     hot_moments,
     normalize_title,
     parse_duration,
@@ -77,3 +79,56 @@ def test_best_match_picks_closest_title():
     m = best_match("YouTube Videos__I bought my dream lambo.mp4", results)
     assert m["id"] == "bbbbbbbbbbb" and m["similarity"] > 0.8
     assert best_match("Completely different video.mp4", results) is None
+
+
+def test_channel_handle():
+    assert channel_handle("https://youtube.com/@shanestoffer?si=g-qq5WDelP1tL4fL") == "shanestoffer"
+    assert channel_handle("@togiextras") == "togiextras"
+    assert channel_handle("https://www.youtube.com/channel/UCabc_123") == "UCabc_123"
+
+
+class FakeSearch:
+    def __init__(self, by_channel):
+        self.by_channel, self.calls = by_channel, []
+
+    def search(self):
+        return self
+
+    def videos(self):
+        return self
+
+    def list(self, **kw):
+        self.calls.append(kw)
+        if "q" in kw:
+            data = {"items": self.by_channel[kw["channelId"]]}
+        else:
+            data = {"items": [{"snippet": {"title": "t"}, "contentDetails": {"duration": "PT1H"}}]}
+        return type("Req", (), {"execute": lambda self_: data})()
+
+
+def test_match_file_tries_channels_in_order(tmp_path, monkeypatch):
+    from togi_clipper import youtube
+    from togi_clipper.config import Config
+
+    fake = FakeSearch({
+        "UCmain": [result("aaaaaaaaaaa", "Lambo prices are crazy")],
+        "UCextras": [result("bbbbbbbbbbb", "I Bought My Dream Lambo")],
+    })
+    monkeypatch.setattr(youtube, "_client", lambda cfg: fake)
+    cfg = Config(work_dir=tmp_path)
+    video = tmp_path / "YouTube Videos__I bought my dream lambo.mp4"
+
+    m = match_file(cfg, video, ["UCmain", "UCextras"])
+    assert m["id"] == "bbbbbbbbbbb" and m["duration"] == 3600
+    assert [c.get("channelId") for c in fake.calls if "q" in c] == ["UCmain", "UCextras"]
+
+    # A good match on the first channel stops the search there.
+    fake.calls.clear()
+    fake.by_channel["UCmain"] = [result("ccccccccccc", "I bought my dream Lambo!")]
+    match_file(cfg, tmp_path / "other__I bought my dream lambo.mp4", ["UCmain", "UCextras"])
+    assert [c.get("channelId") for c in fake.calls if "q" in c] == ["UCmain"]
+
+    # Cached: no new searches.
+    fake.calls.clear()
+    assert match_file(cfg, video, ["UCmain", "UCextras"])["id"] == "bbbbbbbbbbb"
+    assert fake.calls == []

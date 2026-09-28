@@ -16,7 +16,10 @@ class Config:
     dropbox_url: str = field(default_factory=lambda: os.getenv("TOGI_DROPBOX_URL", DEFAULT_DROPBOX_URL))
     dropbox_token: str | None = field(default_factory=lambda: os.getenv("DROPBOX_TOKEN"))
     youtube_api_key: str | None = field(default_factory=lambda: os.getenv("YOUTUBE_API_KEY"))
-    youtube_channel: str = field(default_factory=lambda: os.getenv("TOGI_YT_CHANNEL", ""))
+    # Official channels, comma separated; searched in this order when matching Dropbox videos.
+    youtube_channel: str = field(
+        default_factory=lambda: os.getenv("TOGI_YT_CHANNEL", "@shanestoffer,@togiextras")
+    )
     # Sub-folder of the shared Dropbox with the full YouTube uploads.
     dropbox_youtube_folder: str = field(
         default_factory=lambda: os.getenv("TOGI_DROPBOX_YT_FOLDER", "/YouTube Videos")

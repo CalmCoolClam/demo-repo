@@ -56,16 +56,29 @@ def title_similarity(a: str, b: str) -> float:
     return difflib.SequenceMatcher(None, normalize_title(a), normalize_title(b)).ratio()
 
 
-def channel_id(cfg: Config) -> str | None:
-    if not cfg.youtube_channel:
-        return None
-    handle = cfg.youtube_channel.lstrip("@")
-    if handle.startswith("UC"):
-        return handle
-    items = _client(cfg).channels().list(part="id", forHandle=handle).execute().get("items", [])
-    if not items:
-        raise SystemExit(f"YouTube channel not found: {cfg.youtube_channel}")
-    return items[0]["id"]
+def channel_handle(value: str) -> str:
+    """'@togi', 'togi', 'https://youtube.com/@togi?si=...' or a UC... id -> 'togi' / the id."""
+    value = value.strip()
+    m = re.search(r"youtube\.com/(?:@([\w.-]+)|channel/(UC[\w-]+))", value)
+    if m:
+        return m.group(1) or m.group(2)
+    return value.lstrip("@")
+
+
+def channel_ids(cfg: Config) -> list[str]:
+    """Channel IDs for every entry in TOGI_YT_CHANNEL (comma separated), in order."""
+    yt, ids = None, []
+    for entry in filter(None, (c.strip() for c in cfg.youtube_channel.split(","))):
+        handle = channel_handle(entry)
+        if handle.startswith("UC"):
+            ids.append(handle)
+            continue
+        yt = yt or _client(cfg)
+        items = yt.channels().list(part="id", forHandle=handle).execute().get("items", [])
+        if not items:
+            raise SystemExit(f"YouTube channel not found: {entry}")
+        ids.append(items[0]["id"])
+    return ids
 
 
 def best_match(file_name: str, results: list[dict], min_similarity: float = 0.6) -> dict | None:
@@ -78,8 +91,15 @@ def best_match(file_name: str, results: list[dict], min_similarity: float = 0.6)
     return {"id": r["id"]["videoId"], "title": html.unescape(r["snippet"]["title"]), "similarity": round(score, 2)}
 
 
-def match_file(cfg: Config, video: Path, channel: str | None) -> dict | None:
-    """Find the YouTube upload for a local video with search.list (cached, 100 quota units per search)."""
+GOOD_MATCH = 0.8  # stop searching further channels once a title matches this well
+
+
+def match_file(cfg: Config, video: Path, channels: list[str]) -> dict | None:
+    """Find the YouTube upload for a local video with search.list.
+
+    Channels are searched in order (100 quota units each) until one has a good
+    title match; results are cached so every file is only searched once.
+    """
     cache_file = cfg.work_dir / "youtube_matches.json"
     cache = json.loads(cache_file.read_text()) if cache_file.exists() else {}
     if video.name in cache:
@@ -91,11 +111,17 @@ def match_file(cfg: Config, video: Path, channel: str | None) -> dict | None:
         return entry
 
     query = normalize_title(video.name)
-    params = {"part": "snippet", "q": query, "type": "video", "maxResults": 10}
-    if channel:
-        params["channelId"] = channel
-    results = _client(cfg).search().list(**params).execute().get("items", [])
-    match = best_match(video.name, results)
+    match = None
+    for channel in channels or [None]:
+        params = {"part": "snippet", "q": query, "type": "video", "maxResults": 10}
+        if channel:
+            params["channelId"] = channel
+        results = _client(cfg).search().list(**params).execute().get("items", [])
+        found = best_match(video.name, results)
+        if found and (not match or found["similarity"] > match["similarity"]):
+            match = found
+        if match and match["similarity"] >= GOOD_MATCH:
+            break
     if match:
         match.update(video_info(cfg, match["id"]))
         print(f"  {video.name} -> {match['title']} (https://youtu.be/{match['id']})")
@@ -107,24 +133,30 @@ def match_file(cfg: Config, video: Path, channel: str | None) -> dict | None:
 
 
 def latest_uploads(cfg: Config, count: int, min_seconds: float = 180) -> list[dict]:
-    """Newest long-form uploads of the channel (Shorts are skipped)."""
+    """Newest long-form uploads across the configured channels (Shorts are skipped)."""
     yt = _client(cfg)
-    items = yt.channels().list(part="contentDetails", id=channel_id(cfg)).execute().get("items", [])
-    if not items:
-        raise SystemExit(f"YouTube channel not found: {cfg.youtube_channel}")
-    uploads = items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
+    ids = channel_ids(cfg)
+    if not ids:
+        raise SystemExit("TOGI_YT_CHANNEL is empty.")
+    recent = []  # (published, video id)
+    for ch in yt.channels().list(part="contentDetails", id=",".join(ids)).execute().get("items", []):
+        uploads = ch["contentDetails"]["relatedPlaylists"]["uploads"]
+        items = yt.playlistItems().list(part="contentDetails", playlistId=uploads, maxResults=25).execute()["items"]
+        recent += [(it["contentDetails"].get("videoPublishedAt", ""), it["contentDetails"]["videoId"]) for it in items]
+    recent.sort(reverse=True)
 
-    ids = [
-        it["contentDetails"]["videoId"]
-        for it in yt.playlistItems().list(part="contentDetails", playlistId=uploads, maxResults=50)
-        .execute()["items"]
-    ]
-    videos = yt.videos().list(part="snippet,contentDetails,statistics", id=",".join(ids)).execute()["items"]
     out = []
-    for v in videos:
-        duration = parse_duration(v["contentDetails"]["duration"])
-        if duration >= min_seconds:
-            out.append({"id": v["id"], "title": v["snippet"]["title"], "duration": duration})
+    for i in range(0, len(recent), 50):  # videos.list takes up to 50 ids
+        batch = [vid for _, vid in recent[i : i + 50]]
+        by_id = {
+            v["id"]: v
+            for v in yt.videos().list(part="snippet,contentDetails", id=",".join(batch)).execute()["items"]
+        }
+        for vid in batch:
+            v = by_id.get(vid)
+            if v and parse_duration(v["contentDetails"]["duration"]) >= min_seconds:
+                out.append({"id": vid, "title": v["snippet"]["title"],
+                            "duration": parse_duration(v["contentDetails"]["duration"])})
     return out[:count]
 
 
