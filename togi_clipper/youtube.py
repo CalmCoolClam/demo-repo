@@ -83,7 +83,12 @@ def match_file(cfg: Config, video: Path, channel: str | None) -> dict | None:
     cache_file = cfg.work_dir / "youtube_matches.json"
     cache = json.loads(cache_file.read_text()) if cache_file.exists() else {}
     if video.name in cache:
-        return cache[video.name]
+        entry = cache[video.name]
+        if isinstance(entry, str):  # a video ID or link filled in by hand
+            entry = video_info(cfg, video_id(entry))
+            cache[video.name] = entry
+            cache_file.write_text(json.dumps(cache, ensure_ascii=False, indent=2))
+        return entry
 
     query = normalize_title(video.name)
     params = {"part": "snippet", "q": query, "type": "video", "maxResults": 10}

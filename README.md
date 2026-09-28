@@ -57,7 +57,7 @@ python -m togi_clipper youtube --moments-only   # list the hot moments per video
 python -m togi_clipper youtube --limit 2        # download up to 2 new videos and clip everything in the folder
 ```
 
-- **Matches are saved** in `work/youtube_matches.json`, so each video is searched only once. Check it after the first run. If a video matched the wrong upload, or none, put the right video ID in the file, or delete its entry to search again, then delete that video's `work/transcripts/<id>.moments.json`.
+- **Matches are saved** in `work/youtube_matches.json`, so each video is searched only once. Check it after the first run. If a video matched the wrong upload, or none, replace its entry with the right video ID or link in quotes (e.g. `"YouTube Videos__x.mp4": "https://youtu.be/VIDEO_ID"`), or delete the entry to search again, then delete that video's `work/transcripts/<id>.moments.json`.
 - **Length check:** if the Dropbox file and the YouTube upload differ in length by more than 30 seconds (for example, a re-edit), comment timestamps won't line up. That video is then clipped from the transcript alone.
 - **Quota:** `search.list` costs 100 of the free 10,000 daily units, and reading comments costs about 1 unit per 100 comments. That's roughly 90 new videos a day.
 - **Other options:** `--latest N` (the newest uploads on the channel) and `--video URL` download from YouTube with yt-dlp instead of Dropbox. YouTube's terms don't allow downloading, so prefer the Dropbox mode.
