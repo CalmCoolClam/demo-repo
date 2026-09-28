@@ -39,6 +39,25 @@ python -m togi_clipper process            # clip everything in work/raw
 python -m togi_clipper process my.mp4 --no-render   # only pick highlights, no rendering
 ```
 
+### Clip YouTube videos around what viewers comment on
+
+Reads the comments on TOGI's official YouTube videos, finds the timestamps people post ("12:34 😭😭"), scores each moment by how many comments point at it and how many likes those comments have, and clips those moments first.
+
+```bash
+export YOUTUBE_API_KEY=AIza...        # see below
+export TOGI_YT_CHANNEL=@channelhandle # the official channel's @handle (or its UC... id)
+
+python -m togi_clipper youtube --latest 3 --moments-only   # just list the hot moments
+python -m togi_clipper youtube --latest 3                  # download + clip the 3 newest videos
+python -m togi_clipper youtube --video https://youtu.be/VIDEO_ID
+```
+
+**YouTube API key (free):** in [Google Cloud Console](https://console.cloud.google.com/) create a project, enable *YouTube Data API v3*, then *Credentials -> Create credentials -> API key*. The free quota (10,000 units/day) covers roughly 100 videos' worth of comments a day.
+
+Comments are read through the official API. Videos are downloaded with yt-dlp. TOGI allows clipping his content, but YouTube's terms don't allow downloading, so use the Dropbox copy of a video when it's there.
+
+### Output
+
 Output goes to `work/clips/<video name>/`:
 
 ```

@@ -15,6 +15,8 @@ class Config:
     work_dir: Path = field(default_factory=lambda: Path(os.getenv("TOGI_WORK_DIR", "work")))
     dropbox_url: str = field(default_factory=lambda: os.getenv("TOGI_DROPBOX_URL", DEFAULT_DROPBOX_URL))
     dropbox_token: str | None = field(default_factory=lambda: os.getenv("DROPBOX_TOKEN"))
+    youtube_api_key: str | None = field(default_factory=lambda: os.getenv("YOUTUBE_API_KEY"))
+    youtube_channel: str = field(default_factory=lambda: os.getenv("TOGI_YT_CHANNEL", ""))
     whisper_model: str = field(default_factory=lambda: os.getenv("WHISPER_MODEL", "small"))
     claude_model: str = field(default_factory=lambda: os.getenv("CLAUDE_MODEL", "claude-opus-5-5"))
     clips_per_video: int = field(default_factory=lambda: int(os.getenv("CLIPS_PER_VIDEO", "8")))
